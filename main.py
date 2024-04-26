@@ -1,8 +1,9 @@
 import os
 import traceback
 import logging
-from dotenv import load_dotenv
+import time
 from datetime import datetime
+from dotenv import load_dotenv
 from func import (
     fetch_free_time_slots,
     convert_to_datetime,
@@ -34,69 +35,77 @@ target_time_end = datetime.strptime('21:00', '%H:%M').time()
 # Первоначальная настройка уведомлений
 disable_notification = False
 
-try:
-    free_slots = fetch_free_time_slots(employee_id, club_id)
-    if not free_slots:
-        if slots_have_changed(free_slots):
-            message = 'Нет доступных слотов'
-            send_telegram_message(
-                bot_token=bot_token,
-                chat_id=chat_id,
-                message=message,
-                disable_notification=disable_notification
-            )
-            logging.info(f'Sending message: {message}')
-        else:
-            message = 'Без изменений. Нет доступных слотов'
-            logging.info(f'{message}')
+# Попытки выполнения кода
+attempts = 3
 
-    else:
-        # Конвертация слотов в формат datetime
-        free_slots_dt = [
-            convert_to_datetime(date_str, time_range_str)
-            for date_str, time_range_str in free_slots
-        ]
-        sorted_time_slots = sorted(free_slots_dt, key=lambda x: x[0])
-
-        target_slots = []
-        for start, end in sorted_time_slots:
-            if is_time_within_target(
-                target_time_start,
-                target_time_end,
-                start,
-                end
-            ):
-                slot_str = (
-                    f'{start.strftime("%d-%m-%Y %H:%M")} - '
-                    f'{end.strftime("%H:%M")}'
+for attempt in range(attempts):
+    try:
+        free_slots = fetch_free_time_slots(employee_id, club_id)
+        if not free_slots:
+            if slots_have_changed(free_slots):
+                message = 'Нет доступных слотов'
+                send_telegram_message(
+                    bot_token=bot_token,
+                    chat_id=chat_id,
+                    message=message,
+                    disable_notification=disable_notification
                 )
-                target_slots.append(slot_str)
+                logging.info(f'Sending message: {message}')
+            else:
+                message = 'Без изменений. Нет доступных слотов'
+                logging.info(f'{message}')
+        else:
+            # Конвертация слотов в формат datetime
+            free_slots_dt = [
+                convert_to_datetime(date_str, time_range_str)
+                for date_str, time_range_str in free_slots
+            ]
+            sorted_time_slots = sorted(free_slots_dt, key=lambda x: x[0])
 
-        if slots_have_changed(target_slots):
-            intro_text = 'Доступные слоты в удобное время:'
-            message = f'{intro_text}\n' + '\n'.join(target_slots)
+            target_slots = []
+            for start, end in sorted_time_slots:
+                if is_time_within_target(
+                    target_time_start,
+                    target_time_end,
+                    start,
+                    end
+                ):
+                    slot_str = (
+                        f'{start.strftime("%d-%m-%Y %H:%M")} - '
+                        f'{end.strftime("%H:%M")}'
+                    )
+                    target_slots.append(slot_str)
+
+            if slots_have_changed(target_slots):
+                intro_text = 'Доступные слоты в удобное время:'
+                message = f'{intro_text}\n' + '\n'.join(target_slots)
+                send_telegram_message(
+                    bot_token=bot_token,
+                    chat_id=chat_id,
+                    message=message,
+                    disable_notification=disable_notification
+                )
+                logging.info(f'Sending message: {message}')
+            else:
+                message = 'Без изменений'
+                logging.info(f'{message}')
+
+        break  # Успешное выполнение, выход из цикла
+
+    except Exception as e:
+        traceback_details = traceback.format_exc()
+        logging.error(f'An error occurred on attempt {attempt+1}: {e}\n'
+                      f'Detailed traceback:\n{traceback_details}')
+
+        if attempt < attempts - 1:
+            time.sleep(30)  # Задержка перед следующей попыткой
+        else:
+            message = (f'Failed after {attempts} attempts.\n'
+                       f'An error occurred: {e}\n'
+                       f'For more details, please check the server logs.')
             send_telegram_message(
                 bot_token=bot_token,
                 chat_id=chat_id,
                 message=message,
                 disable_notification=disable_notification
             )
-            logging.info(f'Sending message: {message}')
-        else:
-            message = 'Без изменений'
-            logging.info(f'{message}')
-
-
-except Exception as e:
-    traceback_details = traceback.format_exc()
-    logging.error(f'An error occurred: {e}\n'
-                  f'Detailed traceback:\n{traceback_details}')
-
-    message = (f'An error occurred: {e}\n'
-               f'For more details, please check the server logs.')
-    send_telegram_message(
-        bot_token=bot_token,
-        chat_id=chat_id,
-        message=message,
-        disable_notification=disable_notification
-    )
