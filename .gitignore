@@ -1,5 +1,5 @@
 __pycache__
-logfile.log
+logs.log
 slots.json
 .env
 venv
